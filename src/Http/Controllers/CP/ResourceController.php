@@ -2,25 +2,22 @@
 
 namespace StatamicRadPack\Runway\Http\Controllers\CP;
 
-use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Statamic\CP\Breadcrumbs;
 use Statamic\CP\Column;
 use Statamic\Exceptions\NotFoundHttpException;
 use Statamic\Facades\Action;
 use Statamic\Facades\Scope;
 use Statamic\Facades\User;
-use Statamic\Fields\Field;
 use Statamic\Http\Controllers\CP\CpController;
-use StatamicRadPack\Runway\Fieldtypes\BelongsToFieldtype;
-use StatamicRadPack\Runway\Fieldtypes\HasManyFieldtype;
 use StatamicRadPack\Runway\Http\Requests\CP\CreateRequest;
 use StatamicRadPack\Runway\Http\Requests\CP\EditRequest;
 use StatamicRadPack\Runway\Http\Requests\CP\IndexRequest;
 use StatamicRadPack\Runway\Http\Requests\CP\StoreRequest;
 use StatamicRadPack\Runway\Http\Requests\CP\UpdateRequest;
 use StatamicRadPack\Runway\Http\Resources\CP\Model as ModelResource;
+use StatamicRadPack\Runway\Relationships;
 use StatamicRadPack\Runway\Resource;
-use StatamicRadPack\Runway\Runway;
 
 class ResourceController extends CpController
 {
@@ -84,7 +81,7 @@ class ResourceController extends CpController
             ])->all(),
             'meta' => $fields->meta(),
             'resourceHasRoutes' => $resource->hasRouting(),
-            'canManagePublishState' => User::current()->can('edit', $resource),
+            'canManagePublishState' => User::current()->can('publish', $resource),
         ];
 
         if ($request->wantsJson()) {
@@ -105,11 +102,6 @@ class ResourceController extends CpController
 
         $model = $resource->model();
 
-        $postCreatedHooks = $resource->blueprint()->fields()->all()
-            ->filter(fn (Field $field) => $field->fieldtype() instanceof HasManyFieldtype)
-            ->map(fn (Field $field) => $field->fieldtype()->process($request->get($field->handle())))
-            ->values();
-
         $this->prepareModelForSaving($resource, $model, $request);
 
         if ($resource->revisionsEnabled()) {
@@ -118,12 +110,13 @@ class ResourceController extends CpController
                 'user' => User::current(),
             ]);
         } else {
-            $saved = $model->save();
-        }
+            $saved = DB::transaction(function () use ($model, $request) {
+                $model->save();
+                Relationships::for($model)->with($request->all())->save();
 
-        // Runs anything in the $postCreatedHooks array. See HasManyFieldtype@process for an example
-        // of where this is used.
-        $postCreatedHooks->each(fn ($postCreatedHook) => $postCreatedHook($resource, $model));
+                return true;
+            });
+        }
 
         return [
             'data' => (new ModelResource($model->fresh()))->resolve()['data'],
@@ -177,9 +170,10 @@ class ResourceController extends CpController
                 'title' => $model->{$resource->titleField()},
                 'edit_url' => $request->url(),
             ],
-            'canManagePublishState' => User::current()->can('edit', $resource),
+            'canManagePublishState' => User::current()->can('publish', $resource),
             'itemActions' => Action::for($model, ['resource' => $resource->handle(), 'view' => 'form']),
             'revisionsEnabled' => $resource->revisionsEnabled(),
+            'hasWorkingCopy' => $model->hasWorkingCopy(),
         ];
 
         if ($request->wantsJson()) {
@@ -198,10 +192,6 @@ class ResourceController extends CpController
 
         $this->prepareModelForSaving($resource, $model, $request);
 
-        if ($request->get('from_inline_publish_form')) {
-            $this->handleInlinePublishForm($resource, $model);
-        }
-
         if ($resource->revisionsEnabled() && $model->published()) {
             $saved = $model
                 ->makeWorkingCopy()
@@ -210,42 +200,23 @@ class ResourceController extends CpController
 
             $model = $model->fromWorkingCopy();
         } else {
-            $saved = $model->save();
+            $saved = DB::transaction(function () use ($model, $request) {
+                $model->save();
+                Relationships::for($model)->with($request->all())->save();
+
+                return true;
+            });
+
+            $model->refresh();
         }
 
         [$values] = $this->extractFromFields($model, $resource, $resource->blueprint());
 
         return [
-            'data' => array_merge((new ModelResource($model->fresh()))->resolve()['data'], [
+            'data' => array_merge((new ModelResource($model))->resolve()['data'], [
                 'values' => $values,
             ]),
             'saved' => $saved,
         ];
-    }
-
-    /**
-     * Handle saving data from the Inline Publish Form (the one that appears when you edit models in a stack).
-     */
-    protected function handleInlinePublishForm(Resource $resource, Model &$model): void
-    {
-        collect($resource->blueprint()->fields()->all())
-            ->filter(fn (Field $field) => $field->fieldtype() instanceof BelongsToFieldtype || $field->fieldtype() instanceof HasManyFieldtype)
-            ->each(function (Field $field) use (&$model, $resource) {
-                $relatedResource = Runway::findResource($field->get('resource'));
-
-                $column = $relatedResource->titleField();
-
-                $relationshipName = $resource->eloquentRelationships()->get($field->handle()) ?? $field->handle();
-
-                $model->{$field->handle()} = $model->{$relationshipName}()
-                    ->select($relatedResource->model()->qualifyColumn($relatedResource->primaryKey()), $column)
-                    ->get()
-                    ->each(function ($model) use ($column) {
-                        $model->title = $model->{$column};
-                        $model->edit_url = $model->runwayEditUrl();
-
-                        return $model;
-                    });
-            });
     }
 }

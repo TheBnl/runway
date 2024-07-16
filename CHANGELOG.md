@@ -1,5 +1,40 @@
 # Changelog
 
+## v7.6.0 (2024-07-12)
+
+### What's new
+* Added icons to Runway's fieldtypes #558 by @duncanmcclean
+* Added "Publish" permission for resources with publish states enabled #553 by @edalzell
+
+### What's fixed
+* Refactored the Has Many fieldtype #556 by @duncanmcclean
+* Fixed incorrect revisions status #555 by @duncanmcclean
+* Move test suite from metadata to attributes #557 by @duncanmcclean
+* Fixed dirty state after entry action or revision publish #559 by @duncanmcclean
+* An exception is now thrown, instead of an infinite loop, when a published column is missing #554 by @duncanmcclean
+
+
+
+## v7.5.3 (2024-07-04)
+
+### What's fixed
+* Prevent redirect when creating model via inline publish form #548 by @duncanmcclean
+* Fix error when saving models via inline publish form #547 by @duncanmcclean
+
+
+
+## v7.5.2 (2024-07-01)
+
+### What's fixed
+* Fixed nested fields being saved incorrectly in revision attributes #541 #543 by @edalzell
+* Fixed save button label when revisions are enabled #540 #542 by @edalzell
+* Fixed bulk actions on Asset & User listing tables #530 #535 #537 by @edalzell
+* Fixed PSR-4 autoloading issues in the test suite #538 #545 by @duncanmcclean
+* Prevented the publish form page titles from being localized #531 by @duncanmcclean
+* The "Revisions" panel on the publish form now mentions "Model" instead of "Entry" #536 by @duncanmcclean
+
+
+
 ## v7.5.1 (2024-06-21)
 
 ### What's fixed

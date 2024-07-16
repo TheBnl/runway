@@ -5,7 +5,7 @@
         <div class="flex items-center mb-6">
             <h1 class="flex-1">
                 <div class="flex items-center">
-                    <span v-html="$options.filters.striptags(__(title))" />
+                    <span v-html="$options.filters.striptags(title)" />
                 </div>
             </h1>
 
@@ -47,9 +47,9 @@
                     v-if="revisionsEnabled && !isCreating"
                     class="rtl:mr-4 ltr:ml-4 btn-primary flex items-center"
                     :disabled="!canPublish"
-                    @click="confirmingPublish = true">
-                    <span>{{ __('Publish') }}…</span>
-                </button>
+                    @click="confirmingPublish = true"
+                    v-text="this.publishButtonText"
+                />
             </div>
 
             <slot name="action-buttons-right" />
@@ -116,11 +116,11 @@
                                 <label class="publish-field-label font-medium mb-2" v-text="__('Revisions')"/>
                                 <div class="mb-1 flex items-center" v-if="published">
                                     <span class="text-green-600 w-6 text-center">&check;</span>
-                                    <span class="text-2xs" v-text="__('Entry has a published version')"></span>
+                                    <span class="text-2xs" v-text="__('Model has a published version')"></span>
                                 </div>
                                 <div class="mb-1 flex items-center" v-else>
                                     <span class="text-orange w-6 text-center">!</span>
-                                    <span class="text-2xs" v-text="__('Entry has not been published')"></span>
+                                    <span class="text-2xs" v-text="__('Model has not been published')"></span>
                                 </div>
                                 <div class="mb-1 flex items-center" v-if="!isWorkingCopy && published">
                                     <span class="text-green-600 w-6 text-center">&check;</span>
@@ -158,7 +158,7 @@
                     class="rtl:mr-4 ltr:ml-4 btn-primary flex items-center"
                     :disabled="!canPublish"
                     @click="confirmingPublish = true">
-                    <span v-text="__('Publish')" />
+                    <span v-text="this.publishButtonText" />
                     <svg-icon name="micro/chevron-down-xs" class="rtl:mr-2 ltr:ml-2 w-2" />
                 </button>
             </template>
@@ -181,7 +181,7 @@
                 class="rtl:mr-2 ltr:ml-2 btn btn-lg justify-center btn-primary flex items-center w-1/2"
                 :disabled="!canPublish"
                 @click="confirmingPublish = true">
-                <span v-text="__('Publish')" />
+                <span v-text="this.publishButtonText" />
                 <svg-icon name="micro/chevron-down-xs" class="rtl:mr-2 ltr:ml-2 w-2" />
             </button>
         </div>
@@ -262,7 +262,7 @@ export default {
             title: this.initialTitle,
             values: _.clone(this.initialValues),
             meta: _.clone(this.initialMeta),
-            isWorkingCopy: this.initialWorkingCopy,
+            isWorkingCopy: this.initialIsWorkingCopy,
             error: null,
             errors: {},
             state: 'new',
@@ -328,8 +328,18 @@ export default {
             return this.$dirty.has(this.publishContainer);
         },
 
+        publishButtonText() {
+            if (this.canManagePublishState) {
+                return `${__('Publish')}…`
+            }
+
+            return `${__('Create Revision')}…`
+        },
+
         saveText() {
             switch(true) {
+                case this.revisionsEnabled:
+                    return __('Save Changes');
                 case this.isUnpublishing:
                     return __('Save & Unpublish');
                 case this.publishStatesEnabled && this.isDraft:
@@ -492,7 +502,7 @@ export default {
 
                         this.$nextTick(() => this.$emit('saved', response));
 
-                        if (this.isCreating) {
+                        if (!this.isInline && this.isCreating) {
                             window.location = response.data.data.edit_url + '?created=true';
                         }
                     }
@@ -532,7 +542,10 @@ export default {
             this.isWorkingCopy = isWorkingCopy;
             this.confirmingPublish = false;
             this.title = response.data.data.title;
+            clearTimeout(this.trackDirtyStateTimeout);
+            this.trackDirtyState = false;
             this.values = this.resetValuesFromResponse(response.data.data.values);
+            this.trackDirtyStateTimeout = setTimeout(() => (this.trackDirtyState = true), 350);
             this.permalink = response.data.data.permalink
             this.$nextTick(() => this.$emit('saved', response));
         },
@@ -553,8 +566,6 @@ export default {
          * When creating a new model via the HasMany fieldtype, pre-fill the belongs_to field to the current model.
          */
         prefillBelongsToField() {
-            this.values['from_inline_publish_form'] = true
-
             this.initialBlueprint.tabs.forEach((tab) => {
                 tab.sections.forEach((section) => {
                     section.fields
@@ -577,7 +588,10 @@ export default {
             if (response.data) {
                 this.title = response.data.title;
                 if (!this.revisionsEnabled) this.permalink = response.data.permalink;
+                clearTimeout(this.trackDirtyStateTimeout);
+                this.trackDirtyState = false;
                 this.values = this.resetValuesFromResponse(response.data.values);
+                this.trackDirtyStateTimeout = setTimeout(() => (this.trackDirtyState = true), 350);
                 if (this.publishStatesEnabled) {
                     this.initialPublished = response.data.published;
                 }

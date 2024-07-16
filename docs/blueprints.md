@@ -68,6 +68,7 @@ Width| `integer`                 |
 [YAML](https://statamic.dev/fieldtypes/yaml)| `string`                  |
 [Belongs To](/fieldtypes#belongsto-fieldtype)| `bigInteger`              |Usually `bigInteger` or `integer` but depends on personal preference.
 
+<!--
 ## Nesting fields inside JSON columns
 
 To avoid creating a migration for every new field you add to a blueprint, fields can be stored within JSON columns. Simply use `->` within the field handle, like `values->excerpt`.
@@ -92,10 +93,11 @@ protected function casts(): array
 :::note Note!
 Nested Fields aren't currently available in GraphQL.
 :::
+-->
 
 ## Generating migrations from your blueprints
 
-If you’ve already went and created a blueprint for your model(s) and still to do the database side of things, Runway can help!
+If you’ve already created a blueprint for your model(s) and still need to do the database side of things, Runway can help!
 
 Runway can automatically generate migrations for your models, based on the fields defined in your blueprint, and their configurations.
 
