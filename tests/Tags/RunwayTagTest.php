@@ -332,4 +332,46 @@ class RunwayTagTest extends TestCase
         $this->assertEquals((string) $usage[3]['title'], $posts[3]->title);
         $this->assertEquals((string) $usage[4]['title'], $posts[4]->title);
     }
+
+    #[Test]
+    public function it_fires_an_augmented_hook()
+    {
+        $postBlueprint = Blueprint::find('runway::post');
+        Blueprint::shouldReceive('find')->with('runway::BlogPosts')->andReturn($postBlueprint);
+
+        Config::set('runway.resources.'.Post::class.'.handle', 'BlogPosts');
+
+        Runway::discoverResources();
+
+        $post = Post::factory()->create();
+
+        $augmentedCount = 0;
+
+        $post::hook('augmented', function ($payload, $next) use (&$augmentedCount) {
+            $augmentedCount++;
+
+            return $next($payload);
+        });
+
+        $this->tag->setParameters([]);
+        $this->tag->wildcard('blog_posts');
+
+        $this->assertEquals(1, $augmentedCount);
+    }
+
+    #[Test]
+    public function it_can_count_models()
+    {
+        Post::factory()->count(3)->create();
+        Post::factory()->count(2)->create(['title' => 'Foo Bar']);
+
+        $count = $this->tag
+            ->setParameters([
+                'from' => 'post',
+                'where' => 'title:Foo Bar',
+            ])
+            ->count();
+
+        $this->assertEquals(2, $count);
+    }
 }

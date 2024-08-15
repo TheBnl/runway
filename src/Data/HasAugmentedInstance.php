@@ -3,6 +3,7 @@
 namespace StatamicRadPack\Runway\Data;
 
 use Statamic\Contracts\Data\Augmented;
+use Statamic\Support\Traits\Hookable;
 
 /**
  * This trait is a copy of HasAugmentedInstance built into Statamic BUT
@@ -10,21 +11,39 @@ use Statamic\Contracts\Data\Augmented;
  */
 trait HasAugmentedInstance
 {
+    use Hookable;
+
     public function augmentedValue($key)
     {
         return $this->augmented()->get($key);
     }
 
-    public function toAugmentedCollection($keys = null)
+    private function toAugmentedCollectionWithFields($keys, $fields = null)
     {
         return $this->augmented()
             ->withRelations($this->defaultAugmentedRelations())
+            ->withBlueprintFields($fields)
             ->select($keys ?? $this->defaultAugmentedArrayKeys());
+    }
+
+    public function toAugmentedCollection($keys = null)
+    {
+        return $this->toAugmentedCollectionWithFields($keys);
     }
 
     public function toAugmentedArray($keys = null)
     {
         return $this->toAugmentedCollection($keys)->all();
+    }
+
+    public function toDeferredAugmentedArray($keys = null)
+    {
+        return $this->toAugmentedCollectionWithFields($keys)->deferredAll();
+    }
+
+    public function toDeferredAugmentedArrayUsingFields($keys, $fields)
+    {
+        return $this->toAugmentedCollectionWithFields($keys, $fields)->deferredAll();
     }
 
     public function toShallowAugmentedCollection()
@@ -37,9 +56,9 @@ trait HasAugmentedInstance
         return $this->toShallowAugmentedCollection()->all();
     }
 
-    public function augmented()
+    public function augmented(): Augmented
     {
-        return $this->newAugmentedInstance();
+        return $this->runHooks('augmented', $this->newAugmentedInstance());
     }
 
     abstract public function newAugmentedInstance(): Augmented;

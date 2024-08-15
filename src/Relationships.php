@@ -6,14 +6,13 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\Relation;
 use Statamic\Fields\Field;
 use StatamicRadPack\Runway\Fieldtypes\HasManyFieldtype;
 
 class Relationships
 {
-    public function __construct(protected Model $model, protected array $values = [])
-    {
-    }
+    public function __construct(protected Model $model, protected array $values = []) {}
 
     public static function for(Model $model): self
     {
@@ -30,24 +29,23 @@ class Relationships
     public function save(): void
     {
         $this->model->runwayResource()->blueprint()->fields()->all()
+            ->reject(fn (Field $field) => $field->visibility() === 'computed' || ! $field->get('save', true))
             ->filter(fn (Field $field) => $field->fieldtype() instanceof HasManyFieldtype)
             ->each(function (Field $field): void {
                 $relationshipName = $this->model->runwayResource()->eloquentRelationships()->get($field->handle());
 
-                match (get_class($this->model->{$relationshipName}())) {
-                    HasMany::class => $this->saveHasManyRelationship($field, $this->values[$field->handle()] ?? []),
-                    BelongsToMany::class => $this->saveBelongsToManyRelationship($field, $this->values[$field->handle()] ?? []),
-                    MorphMany::class =>  $this->saveMorphManyRelationship($field, $this->values[$field->handle()] ?? []),
+                match (get_class($relationship = $this->model->{$relationshipName}())) {
+                    HasMany::class => $this->saveHasManyRelationship($field, $relationship, $this->values[$field->handle()] ?? []),
+                    BelongsToMany::class => $this->saveBelongsToManyRelationship($field, $relationship, $this->values[$field->handle()] ?? []),
+                    MorphMany::class =>  $this->saveMorphManyRelationship($field, $relationship, $this->values[$field->handle()] ?? []),
                 };
             });
     }
 
-    protected function saveMorphManyRelationship(Field $field, array $values): void
+    protected function saveMorphManyRelationship(Field $field, Relation $relationship, array $values): void
     {
-        /** @var MorphMany $relationship */
-        $relationship = $this->model->{$field->handle()}();
         $relatedResource = Runway::findResource($field->fieldtype()->config('resource'));
-
+        
         $deleted = $relationship->whereNotIn($relatedResource->primaryKey(), $values)->get()
             ->each->delete()
             ->map->getKey()
@@ -71,10 +69,8 @@ class Relationships
         }
     }
 
-    protected function saveHasManyRelationship(Field $field, array $values): void
+    protected function saveHasManyRelationship(Field $field, Relation $relationship, array $values): void
     {
-        /** @var HasMany $relationship */
-        $relationship = $this->model->{$field->handle()}();
         $relatedResource = Runway::findResource($field->fieldtype()->config('resource'));
 
         $deleted = $relationship->whereNotIn($relatedResource->primaryKey(), $values)->get()
@@ -99,12 +95,12 @@ class Relationships
         }
     }
 
-    protected function saveBelongsToManyRelationship(Field $field, array $values): void
+    protected function saveBelongsToManyRelationship(Field $field, Relation $relationship, array $values): void
     {
         if ($field->fieldtype()->config('reorderable') && $orderColumn = $field->fieldtype()->config('order_column')) {
             $values = collect($values)->mapWithKeys(fn ($id, $index) => [$id => [$orderColumn => $index]])->all();
         }
 
-        $this->model->{$field->handle()}()->sync($values);
+        $relationship->sync($values);
     }
 }

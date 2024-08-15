@@ -14,9 +14,7 @@ class ResourceResponse implements Responsable
 
     protected $with = [];
 
-    public function __construct(protected $data)
-    {
-    }
+    public function __construct(protected $data) {}
 
     public function toResponse($request)
     {
@@ -53,7 +51,7 @@ class ResourceResponse implements Responsable
 
     protected function contents()
     {
-        $contents = (new View())
+        $contents = (new View)
             ->template($this->data->template())
             ->layout($this->data->layout())
             ->with($this->data->toAugmentedArray())
