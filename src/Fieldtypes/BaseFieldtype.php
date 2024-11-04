@@ -3,27 +3,31 @@
 namespace StatamicRadPack\Runway\Fieldtypes;
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Schema;
 use Statamic\CP\Column;
 use Statamic\Facades\Blink;
-use Statamic\Facades\Parse;
 use Statamic\Fieldtypes\Relationship;
 use Statamic\Query\Builder as BaseStatamicBuilder;
-use StatamicRadPack\Runway\Query\Scopes\Filters\Fields\Models;
+use Statamic\Search\Result;
+use StatamicRadPack\Runway\Http\Resources\CP\FieldtypeModel;
+use StatamicRadPack\Runway\Http\Resources\CP\FieldtypeModels;
 use StatamicRadPack\Runway\Resource;
 use StatamicRadPack\Runway\Runway;
+use StatamicRadPack\Runway\Scopes\Fields\Models;
 
-class BaseFieldtype extends Relationship
+abstract class BaseFieldtype extends Relationship
 {
     protected $canEdit = true;
     protected $canCreate = true;
     protected $canSearch = true;
     protected $categories = ['relationship'];
     protected $formComponent = 'runway-publish-form';
+    protected $itemComponent = 'runway-related-item';
 
     protected $formComponentProps = [
         'initialReference' => 'reference',
@@ -101,6 +105,34 @@ class BaseFieldtype extends Relationship
         return File::get(__DIR__.'/../../resources/svg/database.svg');
     }
 
+    public function preload()
+    {
+        return array_merge(parent::preload(), [
+            'unlinkBehavior' => $this->getUnlinkBehavior(),
+        ]);
+    }
+
+    private function getUnlinkBehavior(): string
+    {
+        if ($this->field->parent() instanceof Model && $this instanceof HasManyFieldtype) {
+            $relationshipName = $this->config('relationship_name') ?? $this->field->handle();
+            $relationship = $this->field->parent()->{$relationshipName}();
+            if ($relationship instanceof HasMany) {
+                $foreignKey = $relationship->getQualifiedForeignKeyName();
+
+                $foreignTable = explode('.', $foreignKey)[0];
+                $foreignColumn = explode('.', $foreignKey)[1];
+
+                $column = collect(Schema::getColumns($foreignTable))
+                    ->first(fn (array $column) => $column['name'] === $foreignColumn);
+
+                return Arr::get($column, 'nullable', false) ? 'unlink' : 'delete';
+            }
+        }
+
+        return 'unlink';
+    }
+
     public function getIndexItems($request)
     {
         $resource = Runway::findResource($this->config('resource'));
@@ -123,39 +155,25 @@ class BaseFieldtype extends Relationship
             }
         }, fn ($query) => $query->orderBy($resource->orderBy(), $resource->orderByDirection()));
 
-        $items = $request->boolean('paginate', true)
-            ? $query->paginate()
-            : $query->get();
+        $results = ($paginate = $request->boolean('paginate', true)) ? $query->paginate() : $query->get();
 
         if ($searchQuery && $resource->hasSearchIndex()) {
-            $items->setCollection($items->getCollection()->map(fn ($item) => $item->getSearchable()->model()));
+            $results->setCollection($results->getCollection()->map(fn ($item) => $item->getSearchable()->model()));
         }
 
-        $items
-            ->transform(function ($model) use ($resource) {
-                return $resource->listableColumns()
-                    ->mapWithKeys(function ($columnKey) use ($model) {
-                        $value = $model->{$columnKey};
+        $items = $results->map(fn ($item) => $item instanceof Result ? $item->getSearchable() : $item);
 
-                        // When $value is an Eloquent Collection, we want to map over each item & process its values.
-                        if ($value instanceof EloquentCollection) {
-                            $value = $value->map(fn ($item) => $this->toItemArray($item))->values()->toArray();
-                        }
+        return $paginate ? $results->setCollection($items) : $items;
+    }
 
-                        return [$columnKey => $value];
-                    })
-                    ->merge([
-                        'id' => $model->{$resource->primaryKey()},
-                        'title' => $this->makeTitle($model, $resource),
-                        'status' => $resource->hasPublishStates() ? $model->publishedStatus() : null,
-                        'collection' => ['dated' => false],
-                    ])
-                    ->toArray();
-            });
+    public function getResourceCollection($request, $items)
+    {
+        $resource = Runway::findResource($this->config('resource'));
 
-        return $request->boolean('paginate', true)
-            ? $items
-            : $items->filter()->values();
+        return (new FieldtypeModels($items, $this))
+            ->runwayResource($resource)
+            ->blueprint($resource->blueprint())
+            ->setColumnPreferenceKey("runway.{$resource->handle()}.columns");
     }
 
     public function preProcessIndex($data)
@@ -265,60 +283,30 @@ class BaseFieldtype extends Relationship
     protected function getColumns()
     {
         $resource = Runway::findResource($this->config('resource'));
-        $blueprint = $resource->blueprint();
 
-        return $resource->listableColumns()
-            ->map(function ($columnKey, $index) use ($blueprint) {
-                /** @var \Statamic\Fields\Field $field */
-                $blueprintField = $blueprint->field($columnKey);
-
-                return Column::make()
-                    ->field($blueprintField->handle())
-                    ->label(__($blueprintField->display()))
-                    ->fieldtype($blueprintField->fieldtype()->indexComponent())
-                    ->listable($blueprintField->isListable())
-                    ->defaultVisibility($blueprintField->isVisibleOnListing())
-                    ->visible($blueprintField->isVisibleOnListing())
-                    ->sortable($blueprintField->isSortable())
-                    ->defaultOrder($index + 1);
-            })
+        return $resource->blueprint()->columns()
             ->when($resource->hasPublishStates(), function ($collection) {
-                $collection->push(
-                    Column::make('status')
-                        ->listable(true)
-                        ->visible(true)
-                        ->defaultVisibility(true)
-                        ->sortable(false)
-                );
+                $collection->put('status', Column::make('status')
+                    ->listable(true)
+                    ->visible(true)
+                    ->defaultVisibility(true)
+                    ->sortable(false));
             })
-            ->toArray();
+            ->setPreferred("runway.{$resource->handle()}.columns")
+            ->rejectUnlisted()
+            ->values();
     }
 
     protected function toItemArray($id)
     {
         $resource = Runway::findResource($this->config('resource'));
-
-        if (! $id instanceof Model) {
-            $model = $resource->model()->firstWhere($resource->primaryKey(), $id);
-        } else {
-            $model = $id;
-        }
+        $model = $id instanceof Model ? $id : $resource->model()->firstWhere($resource->primaryKey(), $id);
 
         if (! $model) {
-            return [
-                'id' => $id,
-                'title' => $id,
-                'invalid' => true,
-            ];
+            return $this->invalidItemArray($id);
         }
 
-        return [
-            'id' => $model->getKey(),
-            'reference' => $model->reference(),
-            'status' => $model->publishedStatus(),
-            'title' => $this->makeTitle($model, $resource),
-            'edit_url' => $model->runwayEditUrl(),
-        ];
+        return (new FieldtypeModel($model, $this))->resolve()['data'];
     }
 
     protected function getCreatables()
@@ -331,17 +319,6 @@ class BaseFieldtype extends Relationship
                 'resource' => $resource->handle(),
             ]),
         ]];
-    }
-
-    protected function makeTitle($model, $resource): ?string
-    {
-        if (! $titleFormat = $this->config('title_format')) {
-            $firstListableColumn = $resource->titleField();
-
-            return $model->{$firstListableColumn};
-        }
-
-        return Parse::template($titleFormat, $model);
     }
 
     public function filter()

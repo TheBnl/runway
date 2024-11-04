@@ -1,5 +1,87 @@
 # Changelog
 
+## v7.11.0 (2024-10-11)
+
+### What's new
+* Runway URIs are now warmed as part of the `static:warm` command #623 by @duncanmcclean
+
+### What's improved
+* Prevented duplicate queries for table columns by @duncanmcclean
+* Minor optimisations around the `isJson` function #619 by @indykoning
+* Tidied up the `ServiceProvider` to take advantage of autoloading #622 by @duncanmcclean
+
+### What's fixed
+* Fixed an issue where the "Published" toggle was disabled for non-super users #621 by @duncanmcclean
+
+
+
+## v7.10.1 (2024-09-27)
+
+### What's fixed
+* Fixed missing title on fieldtype dropdown options #615 #617 by @duncanmcclean
+* Fixed error when linking related model with publish states #612 #616 by @duncanmcclean
+* Bump minimum version of `statamic/cms` to 5.26.0, to hopefully fix an issue with actions by @duncanmcclean
+
+
+
+## v7.10.0 (2024-09-25)
+
+### What's improved
+* Improve feedback when action fails #608 by @duncanmcclean
+
+
+
+## v7.9.5 (2024-09-24)
+
+### What's fixed
+* Fixed augmentation on frontend routes #606 #610 by @duncanmcclean
+* Fixed error when removing filters #607 #609 by @duncanmcclean
+
+
+
+## v7.9.4 (2024-09-19)
+
+### What's fixed
+* Fix issue in the REST API when using plurals as resource handles #605 by @duncanmcclean
+
+
+
+## v7.9.3 (2024-09-17)
+
+### What's fixed
+* Fixed an error with the Has Many fieldtype when used on entries #600 #601 by @duncanmcclean
+
+
+
+## v7.9.2 (2024-09-16)
+
+### What's fixed
+* Fixed an error that occurred when creating a model with a Has Many relationship #598 #599 by @BobWez98
+
+
+
+## v7.9.1 (2024-09-12)
+
+### What's fixed
+* Add missing `page` variable for Blade templates #584 #590 by @duncanmcclean
+
+
+
+## v7.9.0 (2024-09-05)
+
+### What's new
+* Improvements around unlinking relationships #582 #595 by @duncanmcclean
+* When adding a new model, Runway will automatically create a blueprint for you, based on the database columns #593 by @duncanmcclean
+
+### What's fixed
+* Fixed sorting in listing tables #587 #591 by @duncanmcclean
+* Fixed an issue where relationship fields weren't showing in the fieldtype selector #588 #592 by @duncanmcclean
+
+### What's removed
+* Removed the `runway:generate-blueprints` command #594 by @duncanmcclean
+
+
+
 ## v7.8.0 (2024-08-14)
 
 ### What's new

@@ -55,6 +55,7 @@ class ResourceResponse implements Responsable
             ->template($this->data->template())
             ->layout($this->data->layout())
             ->with($this->data->toAugmentedArray())
+            ->cascadeContent($this->data)
             ->render();
 
         return $contents;

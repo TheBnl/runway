@@ -6,10 +6,13 @@ use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Foundation\Testing\WithFaker;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\Test;
 use Statamic\Facades\Blink;
+use Statamic\Facades\Entry;
 use Statamic\Fields\Field;
 use Statamic\Http\Requests\FilteredRequest;
+use Statamic\Testing\Concerns\PreventsSavingStacheItemsToDisk;
 use StatamicRadPack\Runway\Fieldtypes\HasManyFieldtype;
 use StatamicRadPack\Runway\Runway;
 use StatamicRadPack\Runway\Tests\Fixtures\Models\Author;
@@ -18,7 +21,7 @@ use StatamicRadPack\Runway\Tests\TestCase;
 
 class HasManyFieldtypeTest extends TestCase
 {
-    use WithFaker;
+    use PreventsSavingStacheItemsToDisk, WithFaker;
 
     protected HasManyFieldtype $fieldtype;
 
@@ -33,6 +36,78 @@ class HasManyFieldtypeTest extends TestCase
                 'display' => 'Posts',
                 'type' => 'has_many',
             ]));
+    }
+
+    #[Test]
+    public function unlink_behavior_is_unlink_when_relationship_column_is_nullable()
+    {
+        Schema::shouldReceive('getColumns')->with('posts')->andReturn([
+            ['name' => 'author_id', 'type' => 'integer', 'nullable' => true],
+        ]);
+
+        Schema::shouldIgnoreMissing();
+
+        $author = Author::factory()->create();
+
+        $field = new Field('posts', [
+            'mode' => 'stack',
+            'resource' => 'post',
+            'display' => 'Posts',
+            'type' => 'has_many',
+        ]);
+
+        $field->setParent($author);
+
+        $fieldtype = new HasManyFieldtype;
+        $fieldtype->setField($field);
+
+        $this->assertEquals('unlink', $fieldtype->preload()['unlinkBehavior']);
+    }
+
+    #[Test]
+    public function unlink_behavior_is_delete_when_relationship_column_is_not_nullable()
+    {
+        Schema::shouldReceive('getColumns')->with('posts')->andReturn([
+            ['name' => 'author_id', 'type' => 'integer', 'nullable' => false],
+        ]);
+
+        Schema::shouldIgnoreMissing();
+
+        $author = Author::factory()->create();
+
+        $field = new Field('posts', [
+            'mode' => 'stack',
+            'resource' => 'post',
+            'display' => 'Posts',
+            'type' => 'has_many',
+        ]);
+
+        $field->setParent($author);
+
+        $fieldtype = new HasManyFieldtype;
+        $fieldtype->setField($field);
+
+        $this->assertEquals('delete', $fieldtype->preload()['unlinkBehavior']);
+    }
+
+    #[Test]
+    public function unlink_behavior_is_unlink_when_field_is_used_on_entry()
+    {
+        \Statamic\Facades\Collection::make('pages')->save();
+
+        $field = new Field('posts', [
+            'mode' => 'stack',
+            'resource' => 'post',
+            'display' => 'Posts',
+            'type' => 'has_many',
+        ]);
+
+        $field->setParent(Entry::make()->collection('pages'));
+
+        $fieldtype = new HasManyFieldtype;
+        $fieldtype->setField($field);
+
+        $this->assertEquals('unlink', $fieldtype->preload()['unlinkBehavior']);
     }
 
     #[Test]
@@ -56,30 +131,6 @@ class HasManyFieldtypeTest extends TestCase
         $this->assertIsObject($getIndexItemsWithoutPagination);
         $this->assertTrue($getIndexItemsWithoutPagination instanceof Collection);
         $this->assertEquals($getIndexItemsWithoutPagination->count(), 10);
-    }
-
-    #[Test]
-    public function can_get_index_items_with_title_format()
-    {
-        $author = Author::factory()->create();
-        $posts = Post::factory()->count(2)->create(['author_id' => $author->id]);
-
-        $this->fieldtype->setField(new Field('posts', [
-            'mode' => 'default',
-            'resource' => 'post',
-            'display' => 'Posts',
-            'type' => 'has_many',
-            'title_format' => '{{ title }} TEST {{ created_at format="Y" }}',
-        ]));
-
-        $getIndexItems = $this->fieldtype->getIndexItems(new FilteredRequest);
-
-        $this->assertIsObject($getIndexItems);
-        $this->assertTrue($getIndexItems instanceof Paginator);
-        $this->assertEquals($getIndexItems->count(), 2);
-
-        $this->assertEquals($getIndexItems->first()['title'], $posts[0]->title.' TEST '.now()->format('Y'));
-        $this->assertEquals($getIndexItems->last()['title'], $posts[1]->title.' TEST '.now()->format('Y'));
     }
 
     #[Test]
